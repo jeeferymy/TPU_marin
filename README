@@ -1,1 +1,261 @@
+First of all apply Google TRC.
 
+Below is a complete, **clear, step-by-step guide** on how to **install Google Cloud SDK** and **create a TPU** (v2/v3/v4/v5e/v5lite) on Google Cloud.
+This guide works for **Windows, macOS, and Linux**.
+
+---
+
+# ✅ **Part 1: Install Google Cloud SDK (gcloud CLI)**
+
+Google Cloud SDK allows you to use the `gcloud` command to create VM + TPU.
+
+---
+
+## **1. Install Google Cloud SDK**
+
+### **Windows**
+
+1. Download installer:
+   [https://cloud.google.com/sdk/docs/install](https://cloud.google.com/sdk/docs/install)
+2. Run **GoogleCloudSDKInstaller.exe**
+3. Ensure these are checked:
+
+   * ✔ Add `gcloud` to Path
+   * ✔ Install Python if needed
+
+---
+
+### **macOS**
+
+```bash
+curl -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-cli-darwin-x86_64.tar.gz
+tar -xf google-cloud-cli-darwin-x86_64.tar.gz
+./google-cloud-sdk/install.sh
+```
+
+---
+
+### **Ubuntu / Debian / WSL**
+
+```bash
+sudo apt-get update
+sudo apt-get install -y curl apt-transport-https ca-certificates gnupg
+curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | sudo apt-key add -
+echo "deb https://packages.cloud.google.com/apt cloud-sdk main" | sudo tee /etc/apt/sources.list.d/google-cloud-sdk.list
+sudo apt-get update && sudo apt-get install -y google-cloud-cli
+```
+
+### **Android**
+
+1. Install Termux
+```bash
+pkg install python3 openssh
+curl -o sdk.sh sdk.cloud.google.com
+chmod +x sdk.sh
+./sdk.sh --install-dir=$PREFIX
+
+---
+
+## **2. Initialize Google Cloud SDK**
+
+Run:
+
+```bash
+gcloud init
+```
+
+Follow the steps:
+
+* Log in with Google
+* Select a project or create a new one
+* Set default compute region
+* Set default compute zone
+  (**important for TPUs**)
+
+---
+
+## **3. Enable Required APIs**
+
+Run:
+
+```bash
+gcloud services enable \
+    compute.googleapis.com \
+    tpu.googleapis.com \
+    iam.googleapis.com \
+    storage.googleapis.com
+```
+
+---
+
+# ✅ **Part 2: Create a TPU on Google Cloud**
+
+You can create:
+
+* TPU **Node** (classic) for v2/v3
+* TPU **VM** (new recommended) for v4 / v5e / v5lite
+
+---
+
+# **Option A — Create TPU v5e or v4 (TPU VM)**
+
+Most modern JAX/Flax & PyTorch XLA models use this.
+
+---
+
+## **1. Choose Zone Supporting TPU**
+
+Examples:
+
+| TPU Version | Zones                             |
+| ----------- | --------------------------------- |
+| v5e         | `us-central2-b`, `europe-west4-a` |
+| v4          | `us-central2-b`                   |
+| v3          | `us-central1-f`                   |
+| v2          | `us-central1-f`                   |
+
+Check available TPU types:
+
+```bash
+gcloud compute tpus tpu-vm accelerator-types list --zone=us-central2-b
+```
+
+---
+
+## **2. Create TPU VM**
+
+### Example: **TPU v5e-8**
+
+```bash
+gcloud compute tpus tpu-vm create tpu-v5e-8 \
+  --zone=us-central2-b \
+  --accelerator-type=v5litepod-8 \
+  --version=tpu-vm-v5-lite-transformer-pytorch
+```
+
+For **JAX / Flax**:
+
+```bash
+gcloud compute tpus tpu-vm create tpu-jax-v5e \
+  --zone=us-central2-b \
+  --accelerator-type=v5litepod-8 \
+  --version=tpu-vm-v5-lite-transformer
+```
+
+---
+
+### Example: **TPU v4-8**
+
+```bash
+gcloud compute tpus tpu-vm create tpu-v4-8 \
+  --zone=us-central2-b \
+  --accelerator-type=v4-8 \
+  --version=tpu-vm-v4-base
+```
+
+---
+
+## **3. SSH into the TPU**
+
+```bash
+gcloud compute tpus tpu-vm ssh tpu-v5e-8 --zone=us-central2-b
+```
+
+---
+
+## **4. Install frameworks (JAX example)**
+
+Inside TPU VM:
+
+```bash
+pip install -U jax jaxlib
+pip install flax optax datasets transformers
+```
+
+For PyTorch/XLA:
+
+```bash
+pip install torch torchvision pytorch-xla
+```
+
+Done — TPU ready.
+
+---
+
+# **Option B — Create TPU v3 or v2 (legacy)**
+
+Uses **Compute Engine VM + TPU Node**.
+
+---
+
+## **1. Create VM**
+
+```bash
+gcloud compute instances create tpu-vm \
+  --zone=us-central1-f \
+  --machine-type=n1-standard-8 \
+  --image-family=debian-11 \
+  --image-project=debian-cloud
+```
+
+---
+
+## **2. Create TPU Node**
+
+```bash
+gcloud compute tpus create tpu-v3 \
+  --zone=us-central1-f \
+  --accelerator-type=v3-8 \
+  --network=default \
+  --version=pytorch-2.0
+```
+
+---
+
+## **3. SSH into VM**
+
+```bash
+gcloud compute ssh tpu-vm --zone=us-central1-f
+```
+
+---
+
+## **4. Install libs and connect to TPU**
+
+```bash
+pip install torch torchvision cloud-tpu-client
+export TPU_NAME=tpu-v3
+export TPU_ZONE=us-central1-f
+```
+
+---
+
+# 🎯 **Part 3: Verify TPU is working (JAX)**
+
+Inside TPU VM:
+
+```python
+import jax
+print(jax.devices())
+```
+
+Expected output includes:
+
+* `TPU v5litepod`
+* or `TPU v4`
+* or `TPU v3`
+
+---
+
+# 🎯 **Part 4: TPU Training Example (JAX)**
+
+```python
+import jax
+import jax.numpy as jnp
+
+@jax.jit
+def add(a, b):
+    return a + b
+
+x = add(jnp.ones((4,4)), jnp.ones((4,4)))
+print(x)
